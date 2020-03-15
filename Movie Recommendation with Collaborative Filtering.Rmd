@@ -1,0 +1,411 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+#Load packages
+library(recommenderlab)
+library(readxl)
+library(tidyverse)
+library(knitr)
+```
+
+
+```{r}
+#-------------------------------Data preparation-------------------------------------
+sheet1 <- read_excel("HW4_Data.xlsx",sheet=1)
+dim(sheet1)
+sheet1 <- sheet1[1:99,6:55]#Only extract ratings for movies. Also exclude rows of three new users.
+sheet1 <- sheet1[-c(10,36,38,68,71,99),]#Exclude group members and one user without ratings when training model.
+sheet2 <- read_excel("HW4_Data.xlsx",sheet=2)
+dim(sheet2)
+sheet2 <- sheet2[,2:51]#Only extract ratings for movies.
+all_data <- rbind(sheet1,sheet2)
+dim(all_data)
+```
+
+
+```{r}
+#-------------------------------Data Exploration-------------------------------------
+hist(as.vector(as.matrix(all_data)), main = "Distribution of Movie Ratings",
+     col = "yellow", xlab = "Ratings")
+#High ratings outnumber low ratings. Right skewed.
+
+boxplot(as.vector(as.matrix(all_data)), col = "yellow", main = "Distribution of Movie Ratings", ylab = "Ratings")
+#Boxplot also shows that people tend to give high ratings for those movies.
+
+summary(as.vector(as.matrix(all_data)))
+#Summary statistics for the raw rating values show that the average rating across all movies and users is 3.934, while the median rating value is 4.000, thereby confirming the impression of positive skew conveyed by the histogram shown above.
+```
+
+
+```{r}
+#---------------------Creating Training and Testing Subsets------------------------
+data_mat <- as.matrix(all_data)
+data_mat <- as(data_mat,"realRatingMatrix")
+# split the data into the training and the test set:
+e <- evaluationScheme(data_mat, method="cross-validation", k=5, given=-1)
+```
+
+
+```{r}
+#User-Based Collaborative Filtering: Cosine Similarity
+
+#--------------------Train UBCF cosine similarity models---------------------
+# non-normalized
+UBCF_N_C <- Recommender(getData(e, "train"), "UBCF", param=list(normalize = NULL, method="Cosine"))
+
+# centered
+UBCF_C_C <- Recommender(getData(e, "train"), "UBCF", param=list(normalize = "center",method="Cosine"))
+
+# Z-score normalization
+UBCF_Z_C <- Recommender(getData(e, "train"), "UBCF", param=list(normalize = "Z-score",method="Cosine"))
+
+#-------------------------------Evaluate the models---------------------------
+# compute predicted ratings
+p1 <- predict(UBCF_N_C, getData(e, "known"), type="ratings")
+p2 <- predict(UBCF_C_C, getData(e, "known"), type="ratings")
+p3 <- predict(UBCF_Z_C, getData(e, "known"), type="ratings")
+
+# set all predictions that fall outside the valid range to the boundary values
+p1@data@x[p1@data@x[] < 1] <- 1
+p1@data@x[p1@data@x[] > 5] <- 5
+
+p2@data@x[p2@data@x[] < -1] <- 1
+p2@data@x[p2@data@x[] > 5] <- 5
+
+p3@data@x[p3@data@x[] < 1] <- 1
+p3@data@x[p3@data@x[] > 5] <- 5
+
+# aggregate the performance statistics
+error_UCOS <- rbind(
+  UBCF_N_C = calcPredictionAccuracy(p1, getData(e, "unknown")),
+  UBCF_C_C = calcPredictionAccuracy(p2, getData(e, "unknown")),
+  UBCF_Z_C = calcPredictionAccuracy(p3, getData(e, "unknown"))
+)
+kable(error_UCOS)
+#The table shows the root mean square error (RMSE), mean squared error (MSE), and mean absolute error (MAE) for each of the three UBCF models we constructed using cosine similarity with varying approaches to data normalization. As we can see, Z-score normalization outperformed centering-based normalization, and both of those normalization approaches outperformed a model constructed using non-normalized data.
+
+# memory cleanup
+rm(UBCF_N_C, UBCF_C_C, UBCF_Z_C)
+```
+
+
+```{r}
+#User-Based Collaborative Filtering: Euclidean Distance
+
+#train UBCF Euclidean Distance models
+# non-normalized
+UBCF_N_E <- Recommender(getData(e, "train"), "UBCF", param=list(normalize = NULL, method="Euclidean"))
+
+# centered
+UBCF_C_E <- Recommender(getData(e, "train"), "UBCF", param=list(normalize = "center",method="Euclidean"))
+
+# Z-score normalization
+UBCF_Z_E <- Recommender(getData(e, "train"), "UBCF", param=list(normalize = "Z-score",method="Euclidean"))
+
+# compute predicted ratings
+p1 <- predict(UBCF_N_E, getData(e, "known"), type="ratings")
+p2 <- predict(UBCF_C_E, getData(e, "known"), type="ratings")
+p3 <- predict(UBCF_Z_E, getData(e, "known"), type="ratings")
+
+# set all predictions that fall outside the valid range to the boundary values
+p1@data@x[p1@data@x[] < 1] <- 1
+p1@data@x[p1@data@x[] > 5] <- 5
+
+p2@data@x[p2@data@x[] < 1] <- 1
+p2@data@x[p2@data@x[] > 5] <- 5
+
+p3@data@x[p3@data@x[] < 1] <- 1
+p3@data@x[p3@data@x[] > 5] <- 5
+
+# aggregate the performance statistics
+error_UEUC <- rbind(
+  UBCF_N_E = calcPredictionAccuracy(p1, getData(e, "unknown")),
+  UBCF_C_E = calcPredictionAccuracy(p2, getData(e, "unknown")),
+  UBCF_Z_E = calcPredictionAccuracy(p3, getData(e, "unknown"))
+)
+kable(error_UEUC)
+#As shown below, Z-score normalization once again outperformed centering-based normalization, and both of those normalization approaches outperformed a model constructed using non-normalized data.
+
+# memory cleanup
+rm(UBCF_N_E, UBCF_C_E, UBCF_Z_E)
+```
+
+
+```{r}
+#User-Based Collaborative Filtering: Pearson Correlation
+#train UBCF pearson correlation models
+
+# non-normalized
+UBCF_N_P <- Recommender(getData(e, "train"), "UBCF", param=list(normalize = NULL, method="pearson"))
+
+# centered
+UBCF_C_P <- Recommender(getData(e, "train"), "UBCF", param=list(normalize = "center",method="pearson"))
+
+# Z-score normalization
+UBCF_Z_P <- Recommender(getData(e, "train"), "UBCF", param=list(normalize = "Z-score",method="pearson"))
+
+# compute predicted ratings
+p1 <- predict(UBCF_N_P, getData(e, "known"), type="ratings")
+p2 <- predict(UBCF_C_P, getData(e, "known"), type="ratings")
+p3 <- predict(UBCF_Z_P, getData(e, "known"), type="ratings")
+
+# set all predictions that fall outside the valid range to the boundary values
+p1@data@x[p1@data@x[] < 1] <- 1
+p1@data@x[p1@data@x[] > 5] <- 5
+
+p2@data@x[p2@data@x[] < 1] <- 1
+p2@data@x[p2@data@x[] > 5] <- 5
+
+p3@data@x[p3@data@x[] < 1] <- 1
+p3@data@x[p3@data@x[] > 5] <- 5
+
+# aggregate the performance statistics
+error_UPC <- rbind(
+  UBCF_N_P = calcPredictionAccuracy(p1, getData(e, "unknown")),
+  UBCF_C_P = calcPredictionAccuracy(p2, getData(e, "unknown")),
+  UBCF_Z_P = calcPredictionAccuracy(p3, getData(e, "unknown"))
+)
+kable(error_UPC)
+#As shown above, Z-score normalization once again outperformed centering-based normalization, and both of those normalization approaches outperformed a model constructed using non-normalized data. 
+
+# memory cleanup
+rm(UBCF_N_P, UBCF_C_P, UBCF_Z_P)
+```
+
+
+```{r}
+#Item-Based Collaborative Filtering: Cosine Similarity
+#train IBCF cosine similarity models
+
+# non-normalized
+IBCF_N_C <- Recommender(getData(e, "train"), "IBCF", param=list(normalize = NULL, method="Cosine"))
+
+# centered
+IBCF_C_C <- Recommender(getData(e, "train"), "IBCF", param=list(normalize = "center",method="Cosine"))
+
+# Z-score normalization
+IBCF_Z_C <- Recommender(getData(e, "train"), "IBCF", param=list(normalize = "Z-score",method="Cosine"))
+
+# compute predicted ratings
+p1 <- predict(IBCF_N_C, getData(e, "known"), type="ratings")
+p2 <- predict(IBCF_C_C, getData(e, "known"), type="ratings")
+p3 <- predict(IBCF_Z_C, getData(e, "known"), type="ratings")
+
+# set all predictions that fall outside the valid range to the boundary values
+p1@data@x[p1@data@x[] < 1] <- 1
+p1@data@x[p1@data@x[] > 5] <- 5
+
+p2@data@x[p2@data@x[] < 1] <- 1
+p2@data@x[p2@data@x[] > 5] <- 5
+
+p3@data@x[p3@data@x[] < 1] <- 1
+p3@data@x[p3@data@x[] > 5] <- 5
+
+# aggregate the performance statistics
+error_ICOS <- rbind(
+  IBCF_N_C = calcPredictionAccuracy(p1, getData(e, "unknown")),
+  IBCF_C_C = calcPredictionAccuracy(p2, getData(e, "unknown")),
+  IBCF_Z_C = calcPredictionAccuracy(p3, getData(e, "unknown"))
+)
+
+kable(error_ICOS)
+#As shown above, Z-score normalization once again outperformed centering-based normalization, and both of those normalization approaches outperformed a model constructed using non-normalized data. 
+
+# memory cleanup
+rm(IBCF_N_C, IBCF_C_C, IBCF_Z_C)
+```
+
+
+```{r}
+#Item-Based Collaborative Filtering: Euclidean Distance
+
+# non-normalized
+IBCF_N_E <- Recommender(getData(e, "train"), "IBCF", 
+      param=list(normalize = NULL, method="Euclidean"))
+
+# centered
+IBCF_C_E <- Recommender(getData(e, "train"), "IBCF", 
+      param=list(normalize = "center",method="Euclidean"))
+
+# Z-score normalization
+IBCF_Z_E <- Recommender(getData(e, "train"), "IBCF", 
+      param=list(normalize = "Z-score",method="Euclidean"))
+
+# compute predicted ratings
+p1 <- predict(IBCF_N_E, getData(e, "known"), type="ratings")
+
+p2 <- predict(IBCF_C_E, getData(e, "known"), type="ratings")
+
+p3 <- predict(IBCF_Z_E, getData(e, "known"), type="ratings")
+
+# set all predictions that fall outside the valid range to the boundary values
+p1@data@x[p1@data@x[] < 1] <- 1
+p1@data@x[p1@data@x[] > 5] <- 5
+
+p2@data@x[p2@data@x[] < 1] <- 1
+p2@data@x[p2@data@x[] > 5] <- 5
+
+p3@data@x[p3@data@x[] < 1] <- 1
+p3@data@x[p3@data@x[] > 5] <- 5
+
+# aggregate the performance statistics
+error_IEUC <- rbind(
+  IBCF_N_E = calcPredictionAccuracy(p1, getData(e, "unknown")),
+  IBCF_C_E = calcPredictionAccuracy(p2, getData(e, "unknown")),
+  IBCF_Z_E = calcPredictionAccuracy(p3, getData(e, "unknown"))
+)
+kable(error_IEUC)
+
+# memory cleanup
+rm(IBCF_N_E, IBCF_C_E, IBCF_Z_E)
+```
+
+
+```{r}
+#Item-Based Collaborative Filtering: Pearson Correlation
+
+#train IBCF pearson correlation models
+# non-normalized
+IBCF_N_P <- Recommender(getData(e, "train"), "IBCF", 
+      param=list(normalize = NULL, method="pearson"))
+
+# centered
+IBCF_C_P <- Recommender(getData(e, "train"), "IBCF", 
+      param=list(normalize = "center",method="pearson"))
+
+# Z-score normalization
+IBCF_Z_P <- Recommender(getData(e, "train"), "IBCF", 
+      param=list(normalize = "Z-score",method="pearson"))
+# compute predicted ratings
+p1 <- predict(IBCF_N_P, getData(e, "known"), type="ratings")
+p2 <- predict(IBCF_C_P, getData(e, "known"), type="ratings")
+p3 <- predict(IBCF_Z_P, getData(e, "known"), type="ratings")
+
+# set all predictions that fall outside the valid range to the boundary values
+p1@data@x[p1@data@x[] < 1] <- 1
+p1@data@x[p1@data@x[] > 5] <- 5
+
+p2@data@x[p2@data@x[] < 1] <- 1
+p2@data@x[p2@data@x[] > 5] <- 5
+
+p3@data@x[p3@data@x[] < 1] <- 1
+p3@data@x[p3@data@x[] > 5] <- 5
+
+# aggregate the performance statistics
+error_IPC <- rbind(
+  IBCF_N_P = calcPredictionAccuracy(p1, getData(e, "unknown")),
+  IBCF_C_P = calcPredictionAccuracy(p2, getData(e, "unknown")),
+  IBCF_Z_P = calcPredictionAccuracy(p3, getData(e, "unknown"))
+)
+kable(error_IPC)
+
+# memory cleanup
+rm(IBCF_N_P, IBCF_C_P, IBCF_Z_P)
+
+```
+
+
+```{r}
+c_res <- data.frame(rbind(error_UCOS, error_UEUC, error_UPC, error_ICOS, error_IEUC, error_IPC))
+
+c_res <- c_res[order(c_res$RMSE ),]
+
+kable(c_res)
+barplot(c_res$RMSE, col = "yellow", main = "Barplot of Model RMSE's", las = 2, ylab = "RMSE", horiz = FALSE, names.arg = rownames(c_res), cex.names=.8)
+```
+
+
+```{r}
+#----------------------------Predict for group members------------------------------------
+sheet1 <- read_excel("HW4_Data.xlsx",sheet=1)
+sheet1 <- sheet1[1:99,6:55]#Only extract ratings for movies. Also exclude rows of three new users.
+sheet2 <- read_excel("HW4_Data.xlsx",sheet=2)
+sheet2 <- sheet2[,2:51]#Only extract ratings for movies.
+all_data <- rbind(sheet1,sheet2)
+dim(all_data)
+
+d<-as.matrix(all_data)
+e <- as(d,"realRatingMatrix")
+IBCF_C_C <- Recommender(e, "IBCF", param=list(normalize = "center",method="Cosine"))
+pre <- predict(IBCF_C_C, e, type="ratings")
+predicted <- as(pre, "matrix")
+group2_Q1 <- predicted[c(10,36,68,71,99),c("A Prophet","Amour","The King's Speech")]
+rownames(group2_Q1) <- c("Joey","Jacqueleine","Yiying","Rebecca","Yuan")
+group2_Q1
+
+group2_Q2 <- predicted[c(10,36,68,71,99),c("Winter's Bone","A Serious Man","Son of Saul")]
+rownames(group2_Q2) <- c("Joey","Jacqueleine","Yiying","Rebecca","Yuan")
+group2_Q2
+```
+
+
+```{r}
+#Question3
+
+#Extract the data for movie: Avatar, The Wolf of Wall Street, and Inception.
+Avatar <- all_data$Avatar
+The_Wolf_of_Wall_Street <- all_data$`The Wolf of Wall Street`
+Inception <- all_data$Inception
+
+hist(as.vector(as.matrix(Avatar)), main = "Distribution of Avatar Ratings",col = "yellow", xlab = "Ratings")
+hist(as.vector(as.matrix(The_Wolf_of_Wall_Street)), main = "Distribution of The Wolf of Wall Street Ratings",col = "yellow", xlab = "Ratings")
+hist(as.vector(as.matrix(Inception)), main = "Distribution of Avatar Ratings",col = "yellow", xlab = "Ratings")
+
+#From the three histogram we can see that the ratings of all three movies are not normally distributed, therefore, we choose to use median rather than mean to predict the ratings for new users Camille, Shachi and Amy.
+
+pre_ratings <- c(median(Avatar[!is.na(Avatar)]),median(The_Wolf_of_Wall_Street[!is.na(The_Wolf_of_Wall_Street)]),median(Inception[!is.na(Inception)]))
+
+predict_Q3 <- rbind(pre_ratings,pre_ratings)
+predict_Q3 <- rbind(predict_Q3,pre_ratings)
+
+colnames(predict_Q3) <- c("Avatar","The Wolf of Wall Street","Inception")
+rownames(predict_Q3) <- c("Amy", "Camille", "Shachi")
+
+predict_Q3
+```
+
+
+```{r}
+#Question4
+
+#Extract the data for movie: Avatar, The Wolf of Wall Street, and Inception.
+movies5 <- all_data[,c("Precious","12 Years a Slave","Mad Max: Fury Road","Black Swan","Toy Story 3")]
+
+sheet1 <- read_excel("HW4_Data.xlsx",sheet=1)
+sheet1 <- sheet1[,6:55]#Only extract ratings for movies. Also exclude rows of three new users.
+sheet2 <- read_excel("HW4_Data.xlsx",sheet=2)
+sheet2 <- sheet2[,2:51]#Only extract ratings for movies.
+all_data <- rbind(sheet1,sheet2)
+dim(all_data)
+
+#Add data of new user.
+all_data[100:102,c("Precious","12 Years a Slave","Mad Max: Fury Road","Black Swan","Toy Story 3")] <- matrix(c(4,5,5,4,3,4,3,4,1,4,2,2,4,3,3),nrow = 3, byrow = TRUE)
+
+d<-as.matrix(all_data)
+e <- as(d,"realRatingMatrix")
+IBCF_C_C <- Recommender(e, "IBCF", param=list(normalize = "center",method="Cosine"))
+pre <- predict(IBCF_C_C, e, type="ratings")
+predicted <- as(pre, "matrix")
+Q4 <- predicted[c(100,101,102),c("Avatar","The Wolf of Wall Street","Inception")]
+rownames(Q4) <- c("Shachi","Amy","Camille")
+Q4
+```
+
+
+```{r}
+#
+
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
